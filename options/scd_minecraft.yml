@@ -1,0 +1,104 @@
+name: scd_minecraft
+manual_seed: 0
+mixed_precision: bf16
+datasets:
+  train:
+    type: MinecraftDataset
+    data_list: datasets/minecraft_latent/minecraft_train.json  # Update to your data path
+    split: training
+    use_latent: true
+    data_cfg:
+      num_frames: 300
+      frame_interval: 1
+    batch_size_per_gpu: 2
+  sample:
+    type: MinecraftDataset
+    data_list: datasets/minecraft/minecraft_val.json  # Update to your data path
+    split: validation
+    data_cfg:
+      num_frames: 300
+      frame_interval: 1
+    num_sample: 256
+    batch_size_per_gpu: 2
+models:
+  model_cfg:
+    transformer:
+      from_pretrained: null
+      gradient_checkpointing: true
+      init_cfg:
+        type: SCD_M_encoder
+        config:
+          condition_cfg:
+            type: action
+            num_action_classes: 4
+          num_layers: 8
+          short_term_ctx_winsize: 299
+          decouple_type: encoder
+          norm_out_unconditional: false
+          noise_strength: 0.05
+      decoder_cfg:
+        type: SCD_M_decoder
+        config:
+          condition_cfg:
+            type: action
+            num_action_classes: 4
+          num_layers: 4
+          short_term_ctx_winsize: 299
+          decouple_type: decoder
+          decoder_input_combine: token_concat
+
+    vae:
+      type: MyAutoencoderDC
+      from_config: options/model_cfg/dcae/model_16x_c32_config.json
+      from_config_pretrained: pretrained/dcae/DCAE_Minecraft_Res128.pth  # Download from HuggingFace
+    scheduler:
+      from_pretrained: options/model_cfg/scd/scheduler_config.json
+  clean_context_ratio: 0.1
+  weighting_scheme: logit_normal
+  training_type: long_context
+  encoder_lr_ratio: 1.0
+  decoder_lr_ratio: 2.0
+path:
+  pretrain_network: null
+train:
+  optim_g:
+    type: AdamW
+    lr: 0.0001
+    weight_decay: 0
+    betas:
+    - 0.9
+    - 0.999
+  param_names_to_optimize: null
+  ema_decay: 0.9999
+  lr_scheduler: constant_with_warmup
+  warmup_iter: 10000
+  total_iter: 1000000
+  max_grad_norm: 1.0
+  train_no_action_ratio: 0.0
+val:
+  val_freq: 100000
+  sample_cfg:
+    context_length: 144
+    unroll_length: 156
+    guidance_scale:
+    - 1.5
+    - 1.0
+    num_inference_steps: 50
+    sample_size: 8
+    sample_trajectory_per_video: 4
+    use_kv_cache: true
+    anno_context: false
+    cfg_type: decoder
+  eval_cfg:
+    metrics:
+    - mse
+    - psnr
+    - ssim
+    - fvd
+    - lpips
+logger:
+  print_freq: 100
+  save_checkpoint_freq: 100000
+  use_wandb: true
+decoder_multi_batch: 2
+

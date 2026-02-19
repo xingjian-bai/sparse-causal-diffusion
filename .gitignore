@@ -1,0 +1,46 @@
+# Project-specific
+experiments/
+results/
+pretrained/
+datasets/
+tb_logger/
+wandb/
+jobs/
+_archive/
+tests/
+docs/
+notebooks/
+CLAUDE.md
+README.md.bak
+core*
+stage2*
+
+# Model weights
+*.pth
+*.safetensors
+*.ckpt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+
+# IDE / OS
+.vscode/
+*idea/
+*.code-workspace
+*.DS_Store
+
+# Environments
+.env
+.venv
+env/
+venv/
+
+# Logs and caches
+*.log
+.pytest_cache/
+.mypy_cache/
