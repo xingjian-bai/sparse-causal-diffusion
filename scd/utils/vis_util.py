@@ -24,7 +24,6 @@ def log_paired_video(
 ):
 
     def _resize_video(tensor: torch.Tensor, target_hw: tuple[int, int]) -> torch.Tensor:
-        """Resize B x N x F x C x H x W tensor to target spatial size."""
         if tensor is None:
             return None
         b, n, f, c, h, w = tensor.shape
@@ -114,11 +113,7 @@ def save_images_as_gif(images: List[Image.Image], save_path: str, fps=8) -> None
 def export_to_video(video_frames: List[Image.Image], output_video_path: str, fps=8) -> str:
     os.makedirs(os.path.dirname(output_video_path), exist_ok=True)
     video_writer = imageio.get_writer(output_video_path, fps=fps)
-
-    # Write each image to the video
     for img in video_frames:
         video_writer.append_data(np.array(img))
-
-    # Close the video writer
     video_writer.close()
     return output_video_path

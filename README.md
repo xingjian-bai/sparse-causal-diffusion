@@ -38,28 +38,11 @@ export HF_TOKEN=hf_...
 bash scripts/setup_data.sh
 ```
 
-<details>
-<summary>Or manually:</summary>
-
-```bash
-conda create -n scd python=3.10
-conda activate scd
-pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu124
-pip install -r requirements.txt
-```
-</details>
-
 ## Training
 
 ```bash
 # Default: 8 GPUs
 ./scripts/train.sh
-
-# Custom GPU count
-NUM_GPUS=8 ./scripts/train.sh
-
-# Directly with accelerate
-accelerate launch --num_processes 8 train.py -opt options/scd_minecraft.yml
 ```
 
 <!-- ## Inference

@@ -294,8 +294,6 @@ class SCDPipeline(DiffusionPipeline):
                 vision_context_input = vision_context
 
             if not torch.is_tensor(timesteps):
-                # TODO: this requires sync between CPU and GPU. So try to pass timesteps as tensors if you can
-                # This would be a good case for the `match` statement (Python 3.10+)
                 is_mps = latent_model_input.device.type == 'mps'
                 if isinstance(timesteps, float):
                     dtype = torch.float32 if is_mps else torch.float64

@@ -1,14 +1,4 @@
-"""
-Training Script for Decoupled Encoder-Decoder Video Model
-
-This script trains the SCD model with decoupled encoder-decoder architecture.
-Supports distributed training via accelerate, wandb logging, and automatic checkpointing.
-
-Usage:
-    accelerate launch train.py -opt options/scd_minecraft.yml
-
-See scripts/train.sh for a convenient wrapper.
-"""
+"""Training script. Usage: accelerate launch train.py -opt options/scd_minecraft.yml"""
 import argparse
 import gc
 import os
@@ -52,40 +42,25 @@ def train(args):
     # load config
     opt = OmegaConf.to_container(OmegaConf.load(args.opt), resolve=True)
 
-    # DDP Environment Setup
-    # This function handles edge cases when running with different launchers (accelerate, SLURM, etc.)
-    # It ensures consistent distributed training behavior across different cluster configurations.
-    def sanitize_or_validate_ddp_env(default_port="19043"):
-        """
-        Sanitize or validate DDP environment variables.
-
-        This handles two cases:
-        1. Single process: Clear stale SLURM/PMI env vars that might cause false DDP detection
-        2. Multi-process: Validate that RANK/WORLD_SIZE are consistent, set defaults for MASTER_ADDR/PORT
-        """
+    def sanitize_ddp_env(default_port="19043"):
         ddp_keys = ("RANK", "WORLD_SIZE", "LOCAL_RANK", "LOCAL_WORLD_SIZE")
         is_multiproc = any(k in os.environ for k in ddp_keys)
 
         if not is_multiproc or os.environ.get("WORLD_SIZE", "1") == "1":
-            # Single process: clear stale env vars from SLURM/PMI to avoid false DDP detection
             for k in ["RANK", "WORLD_SIZE", "LOCAL_RANK", "LOCAL_WORLD_SIZE", "NODE_RANK",
                       "SLURM_PROCID", "SLURM_NTASKS", "PMI_SIZE", "PMI_RANK", "MASTER_ADDR", "MASTER_PORT"]:
                 os.environ.pop(k, None)
             os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
             os.environ.setdefault("MASTER_PORT", default_port)
         else:
-            # Multi-process: keep launcher-injected RANK/WORLD_SIZE, set defaults for address/port
             os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
             os.environ.setdefault("MASTER_PORT", default_port)
-            # Validate consistency - fail early rather than hang
             assert "RANK" in os.environ and "WORLD_SIZE" in os.environ, "Missing DDP ranks"
             r, w = int(os.environ["RANK"]), int(os.environ["WORLD_SIZE"])
             assert 0 <= r < w, f"Inconsistent rank/world_size: {r}/{w}"
 
-    sanitize_or_validate_ddp_env(default_port="19043")
-
-    # Increase NCCL timeout to reduce spurious timeouts on single-node multi-GPU setups
-    os.environ.setdefault("NCCL_TIMEOUT_MS", "2000000")  # ~33 minutes
+    sanitize_ddp_env(default_port="19043")
+    os.environ.setdefault("NCCL_TIMEOUT_MS", "2000000")
 
     accelerator = Accelerator(mixed_precision=opt['mixed_precision'])
 
@@ -102,29 +77,15 @@ def train(args):
     if accelerator.is_main_process and opt['logger'].get('use_wandb', False):
         wandb_logger = setup_wandb(name=opt['name'], save_dir=opt['path']['log'])
 
-        # Log configuration to wandb config
         if getattr(wandb, 'run', None) is not None:
-            # Convert opt to a format suitable for wandb config
             wandb.config.update(opt)
-            
-            # Log code files - improved version to capture all relevant files
             code_root = os.path.dirname(os.path.abspath(__file__))
             def _include_fn(path: str) -> bool:
-                # First check exclusion patterns
-                exclude_patterns = [
-                    '__pycache__', '.git', '.pytest_cache', 'wandb', 
-                    'experiments', 'results', '.vscode', '.idea',
-                    'node_modules', '.DS_Store', '*.pyc', '*.pyo'
-                ]
-                for pattern in exclude_patterns:
-                    if pattern in path:
-                        return False
-                
-                # Then check if it's a file type we want to include
+                exclude = ['__pycache__', '.git', 'wandb', 'experiments', 'results']
+                if any(p in path for p in exclude):
+                    return False
                 return path.endswith(('.py', '.yml', '.yaml', '.sh', '.json', '.txt'))
-            
             wandb.run.log_code(root=code_root, include_fn=_include_fn)
-            logger.info(f'Logged configuration and code to wandb from {code_root}')
     else:
         wandb_logger = None
 
@@ -249,19 +210,11 @@ def train(args):
 
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
-                        gpu_memory_before = torch.cuda.memory_allocated() / 1024**3
-                        gpu_memory_reserved_before = torch.cuda.memory_reserved() / 1024**3
-                        accelerator.print(f"Before scale {scale} steps {steps}: GPU allocated: {gpu_memory_before:.2f}GB, reserved: {gpu_memory_reserved_before:.2f}GB")
 
                     sample_time = 0.0
                     sample_start_time = time.perf_counter()
                     debug_flag = (not initial_inference_done) and (current_step <= 1000) and run_tag == 'loop'
                     effective_steps = 2 if debug_flag else steps
-                    accelerator.print(
-                        f"Starting evaluation with guidance_scale={scale}, "
-                        f"requested_steps={steps}, used_steps={effective_steps} "
-                        f"(s{scale_idx+1}/{len(guidance_scale_list)}, n{steps_idx+1}/{len(num_steps_list)})"
-                    )
                     train_pipeline.sample(
                         sample_dataloader,
                         opt,
@@ -272,26 +225,18 @@ def train(args):
                         num_inference_steps=steps,
                     )
                     sample_time = time.perf_counter() - sample_start_time
-                    accelerator.print(f"Sampling completed for scale {scale}, used_steps {effective_steps}, time: {sample_time:.2f}s")
 
                     accelerator.wait_for_everyone()
                     if train_pipeline.ema is not None:
                         _log_ema_alignment(accelerator, train_pipeline, f'after-{run_tag}-scale-{scale}-steps-{steps}')
 
-                    if torch.cuda.is_available():
-                        gpu_memory_after = torch.cuda.memory_allocated() / 1024**3
-                        gpu_memory_reserved_after = torch.cuda.memory_reserved() / 1024**3
-                    accelerator.print(f"After sampling scale {scale} steps {effective_steps}: GPU allocated: {gpu_memory_after:.2f}GB, reserved: {gpu_memory_reserved_after:.2f}GB")
-
                     if accelerator.is_main_process and 'eval_cfg' in opt['val']:
-                        accelerator.print(f"Starting evaluation metrics for scale {scale}, steps {effective_steps}")
                         result_dict = train_pipeline.eval_performance(
                             opt,
                             guidance_scale=scale,
                             global_step=current_step,
                             num_inference_steps=effective_steps,
                         )
-                        accelerator.print(f"Evaluation metrics completed for scale {scale}, steps {effective_steps}")
 
                         if wandb_logger and initial_inference_done:
                             wandb_log_dict = {
@@ -303,43 +248,29 @@ def train(args):
                             wandb_log_dict[f'eval/eval_time_sec_{scale}_steps{effective_steps}'] = sample_time
                             wandb_logger.log(wandb_log_dict)
 
-            except Exception as e:
-                accelerator.print(f"ERROR: Exception during evaluation with scale {scale}: {str(e)}")
-                accelerator.print(f"Exception type: {type(e).__name__}")
+            except Exception:
                 import traceback
-                accelerator.print(f"Traceback: {traceback.format_exc()}")
-
-                if torch.cuda.is_available():
-                    gpu_memory_error = torch.cuda.memory_allocated() / 1024**3
-                    gpu_memory_reserved_error = torch.cuda.memory_reserved() / 1024**3
-                    accelerator.print(f"GPU memory at error: allocated: {gpu_memory_error:.2f}GB, reserved: {gpu_memory_reserved_error:.2f}GB")
+                accelerator.print(f"Exception during eval scale={scale}:\n{traceback.format_exc()}")
                 raise
             finally:
                 accelerator.wait_for_everyone()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                 gc.collect()
-                accelerator.print(f"Completed evaluation for scale {scale}")
+                pass
 
         initial_inference_done = True
         last_eval_step = current_step
         last_log_time = time.perf_counter()
 
-    debug_state = {'batch_logged': False}
+    first_batch_logged = False
     while global_step < total_iter:
         batch = next(train_data_yielder)
-        if accelerator.is_main_process and not debug_state['batch_logged']:
-            accelerator.print("First training batch snapshot:")
+        if accelerator.is_main_process and not first_batch_logged:
             for key, value in batch.items():
                 if torch.is_tensor(value):
-                    accelerator.print(
-                        f"  - {key}: shape={tuple(value.shape)}, dtype={value.dtype}, "
-                        f"device={value.device}, min={value.min().item():.4f}, max={value.max().item():.4f}"
-                    )
-                else:
-                    accelerator.print(f"  - {key}: type={type(value)}, sample={value if isinstance(value, (int, float, str)) else '...'}")
-            debug_state['batch_logged'] = True
-        # --- start of iteration ---
+                    accelerator.print(f"  {key}: {tuple(value.shape)} {value.dtype}")
+            first_batch_logged = True
         decoder_multi_batch = (
             opt.get('decoder_multi_batch')
             or opt.get('models', {}).get('decoder_multi_batch')

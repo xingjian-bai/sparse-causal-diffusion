@@ -30,20 +30,7 @@ def open_url(
     if not re.match('^[a-z]+://', url):
         return url if return_filename else open(url, 'rb')
 
-    # Handle file URLs.  This code handles unusual file:// patterns that
-    # arise on Windows:
-    #
-    # file:///c:/foo.txt
-    #
-    # which would translate to a local '/c:/foo.txt' filename that's
-    # invalid.  Drop the forward slash for such pathnames.
-    #
-    # If you touch this code path, you should test it on both Linux and
-    # Windows.
-    #
-    # Some internet resources suggest using urllib.request.url2pathname() but
-    # but that converts forward slashes to backslashes and this causes
-    # its own set of problems.
+    # Handle file:// URLs (strip leading slash for Windows drive letters).
     if url.startswith('file://'):
         filename = urllib.parse.urlparse(url).path
         if re.match(r'^/[a-zA-Z]:', filename):

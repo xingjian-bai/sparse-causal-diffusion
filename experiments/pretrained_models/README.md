@@ -1,1 +1,1 @@
-# Put downloaded pretrained models here
+Pretrained weights will be released here. Stay tuned.
