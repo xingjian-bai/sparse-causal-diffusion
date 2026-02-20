@@ -45,24 +45,9 @@ bash scripts/setup_data.sh
 ./scripts/train.sh
 ```
 
-<!-- ## Inference
-
-```bash
-# Evaluation with metrics (FVD, PSNR, SSIM, LPIPS)
-./scripts/inference.sh path/to/ema.pth
-
-# Generate videos
-python inference/run_decoupled_16_videos.py \
-    --opt options/scd_minecraft.yml \
-    --checkpoint path/to/ema.pth \
-    --num-videos 16
-```
-
 ## Pretrained Weights
 
-| Model | Dataset | Resolution | Download |
-|-------|---------|------------|----------|
-| SCD | Minecraft | 128x128 | Coming soon | -->
+Coming soon.
 
 ## Citation
 
